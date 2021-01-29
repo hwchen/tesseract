@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::str;
 
 use actix_web::{
@@ -7,22 +6,18 @@ use actix_web::{
     Path,
     Result as ActixResult,
 };
-use failure::{Error, format_err};
+use failure::Error;
 use futures::future::Future;
 use lazy_static::lazy_static;
 use log::*;
 use serde_qs as qs;
 use serde_derive::Deserialize;
-use url::Url;
 
-use tesseract_core::names::{Property, LevelName};
 use tesseract_core::format::{format_records, FormatType};
 use tesseract_core::{DataFrame, Column, ColumnData};
-use tesseract_core::schema::{Cube, DimensionType, Level};
+use tesseract_core::schema::{Cube, Level};
 use crate::app::AppState;
-use crate::logic_layer::{LogicLayerConfig, CubeCache};
 use crate::handlers::util::{verify_authorization, format_to_content_type};
-use crate::handlers::logic_layer::{query_geoservice, GeoserviceQuery};
 
 
 /// Handles default aggregation when a format is not specified.
@@ -37,7 +32,7 @@ pub fn diagnosis_default_handler(
 
 /// Handles aggregation when a format is specified.
 pub fn diagnosis_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+    (req, cube_format): (HttpRequest<AppState>, Path<String>)
 ) -> ActixResult<HttpResponse>
 {
     perform_diagnosis(req, cube_format.to_owned())
@@ -99,7 +94,7 @@ pub fn perform_diagnosis(
             let mut error_messages: Vec<String> = vec![];
 
             for cube in &schema.cubes {
-                if let Err(err) = verify_authorization(&req, cube.min_auth_level) {
+                if let Err(_err) = verify_authorization(&req, cube.min_auth_level) {
                     continue;
                 }
 
@@ -109,7 +104,7 @@ pub fn perform_diagnosis(
                 if new_error_types.len() != 0 {
                     let mut new_error_cubes: Vec<String> = vec![];
 
-                    for i in 0..new_error_types.len() {
+                    for _i in 0..new_error_types.len() {
                         new_error_cubes.push(cube.name.clone());
                     }
 

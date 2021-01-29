@@ -37,7 +37,7 @@ pub fn logic_layer_non_unique_levels_default_handler(
 
 
 pub fn logic_layer_non_unique_levels_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<(String)>),
+    (req, _cube): (HttpRequest<AppState>, Path<String>),
     ) -> HttpResponse
 {
     if req.state().debug {
@@ -71,7 +71,7 @@ pub fn logic_layer_relations_non_unique_levels_default_handler(
 
 
 pub fn logic_layer_relations_non_unique_levels_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<(String)>),
+    (req, _cube): (HttpRequest<AppState>, Path<String>),
     ) -> HttpResponse
 {
     if req.state().debug {

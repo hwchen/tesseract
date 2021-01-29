@@ -8,7 +8,7 @@ use mysql_async::Value::*;
 use std::str;
 use tesseract_core::{DataFrame, Column, ColumnData};
 
-pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future<Item=DataFrame, Error=Error>> {
+pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box< dyn Future<Item=DataFrame, Error=Error>> {
     let mut tcolumn_list = vec![];
     let columns = query_result.columns_ref();
 

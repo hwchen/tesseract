@@ -55,7 +55,7 @@ impl Postgres {
 // 2. dataframe creation
 
 impl Backend for Postgres {
-    fn exec_sql(&self, sql: String) -> Box<Future<Item=DataFrame, Error=Error>> {
+    fn exec_sql(&self, sql: String) -> Box< dyn Future<Item=DataFrame, Error=Error>> {
         let fut = self.pool.run(move |mut connection| {
             connection.prepare(&sql).then( |r| match r {
                 Ok(select) => {

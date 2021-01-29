@@ -36,7 +36,7 @@ pub fn logic_layer_members_default_handler(
 
 /// Handles members query when a format is specified.
 pub fn logic_layer_members_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+    (req, cube_format): (HttpRequest<AppState>, Path<String>)
 ) -> FutureResponse<HttpResponse>
 {
     get_members(req, cube_format.to_owned())

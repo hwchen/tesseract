@@ -36,7 +36,7 @@ pub fn logic_layer_relations_default_handler(
 
 /// Handles aggregation when a format is specified.
 pub fn logic_layer_relations_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+    (req, cube_format): (HttpRequest<AppState>, Path<String>)
 ) -> ActixResult<HttpResponse>
 {
     logic_layer_relations(req, cube_format.to_owned())

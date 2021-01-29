@@ -61,7 +61,7 @@ pub fn logic_layer_default_handler(
 
 /// Handles aggregation when a format is specified.
 pub fn logic_layer_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+    (req, cube_format): (HttpRequest<AppState>, Path<String>)
 ) -> FutureResponse<HttpResponse>
 {
     logic_layer_aggregation(req, cube_format.to_owned())

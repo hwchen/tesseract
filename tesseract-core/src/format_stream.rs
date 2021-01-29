@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use csv;
-use failure::{Error, format_err};
+use failure::Error;
 use futures::{Stream, Async, Poll};
 use indexmap::IndexMap;
 use serde::Serializer;
@@ -117,8 +117,7 @@ impl<S> Stream for RecordBlockStream<S>
 
                     self.sent_header = true;
                     return Ok(Async::Ready(Some(bytes)));
-                },
-                _ => return Err(format_err!("just csv first")),
+                }
             }
         }
 
@@ -147,8 +146,7 @@ impl<S> Stream for RecordBlockStream<S>
                         FormatType::JsonArrays => {
                             let res = b"]}".to_vec().into();
                             return Ok(Async::Ready(Some(res)));
-                        },
-                        _ => return Err(format_err!("just csv first")),
+                        }
                     }
                 },
             };
@@ -198,7 +196,6 @@ impl<S> Stream for RecordBlockStream<S>
 
                             return Ok(Async::Ready(Some(body)));
                         }
-                        _ => return Err(format_err!("just csv first")),
                     };
 
                     return Ok(Async::Ready(Some(formatted)));

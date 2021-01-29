@@ -41,7 +41,7 @@ pub fn rate_calculation(
         primary_agg(table, cuts, &new_drills, meas, None)
     };
 
-    let mut rate_sql = "".to_string();
+    let mut rate_sql;
 
     // Wrap that around a pivot
     let original_drill_cols = drills.iter().map(|drill| drill.col_alias_only_string());

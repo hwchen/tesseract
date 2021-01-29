@@ -14,7 +14,7 @@ pub trait Backend {
     /// Takes in a SQL string, outputs a stream of
     /// DataFrames, which will go on to be formatted into the
     /// desired query output format.
-    fn exec_sql_stream(&self, sql: String) -> Box<dyn Stream<Item=Result<DataFrame, Error>, Error=Error>> {
+    fn exec_sql_stream(&self, _sql: String) -> Box<dyn Stream<Item=Result<DataFrame, Error>, Error=Error>> {
         unimplemented!()
     }
 
