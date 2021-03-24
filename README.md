@@ -85,6 +85,20 @@ Don't forget to set the needed [environment variables](#environment-variables). 
 
 - `RUST_LOG`: optional, sets logging level. I generally set to `info`.
 
+#### Docker Example
+
+In order to run a container with the highest verbose level of debugging, we would do it like this:
+
+```
+docker run -p 7777:7777 -v ~/CODE/dw-localenv-tesseract:/dw-localenv-tesseract -e TESSERACT_DATABASE_URL='clickhouse://default:@host.docker.internal:9000/default' -e TESSERACT_SCHEMA_FILEPATH='/dw-localenv-tesseract/schema.xml' -e TESSERACT_DEBUG=true -e RUST_LOG=debug --name=tesseract-local tesseract:latest
+```
+
+Note that the `7777` port is published to the host, we pass the repository with the schema file (`dw-localenv-tesseract`) as a volume to the container and we connect to another container with a ClickHouse Server running. To access the host's `localhost` address from the container we must use:
+
+* **Windows**: `host.docker.internal`
+* **Mac OS**: `host.docker.internal` or `docker.for.mac.localhost`
+* **Linux**: `172.17.0.1`
+
 ### API documentation
 
 For more details on the api, please check the server [readme](https://github.com/hwchen/tesseract/blob/master/tesseract-server/README.md). This will soon be updated and easier to follow on a separate documentation site.
