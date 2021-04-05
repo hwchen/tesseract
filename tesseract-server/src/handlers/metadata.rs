@@ -1,13 +1,10 @@
 use actix_web::{
-    AsyncResponder,
-    FutureResponse,
+    web,
     HttpRequest,
     HttpResponse,
-    Path,
     Result as ActixResult
 };
 
-use futures::future::{self, Future};
 use lazy_static::lazy_static;
 use log::*;
 use serde_derive::Deserialize;
@@ -19,43 +16,46 @@ use tesseract_core::DEFAULT_ALLOWED_ACCESS;
 
 use crate::app::AppState;
 use crate::logic_layer::LogicLayerConfig;
-use super::util::{boxed_error_http_response, verify_authorization, get_user_auth_level};
+use super::util::{verify_authorization, get_user_auth_level};
 
 
-pub fn metadata_handler(
-    (req, cube): (HttpRequest<AppState>, Path<String>)
+pub async fn metadata_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube: web::Path<String>,
     ) -> ActixResult<HttpResponse>
 {
     info!("Metadata for cube: {}", cube);
-    let cube = match req.state().schema.read().unwrap().cube_metadata(&cube){
+    let cube = match state.schema.read().unwrap().cube_metadata(&cube){
         Some(c) => c,
         None => return Ok(HttpResponse::NotFound().finish()),
     };
 
-    if let Err(err) = verify_authorization(&req, cube.min_auth_level) {
+    if let Err(err) = verify_authorization(&req, &state, cube.min_auth_level) {
         return Ok(err);
     }
 
-    let ll_config = match &req.state().logic_layer_config {
+    let ll_config = match &state.logic_layer_config {
         Some(llc) => llc.read().unwrap().clone(),
-        None => return  Ok(HttpResponse::Ok().json(cube))
+        None => return  Ok(HttpResponse::Ok().json(&cube))
     };
     let cube_details = get_cube_metadata(cube, &ll_config);
-    Ok(HttpResponse::Ok().json(cube_details))
+    Ok(HttpResponse::Ok().json(&cube_details))
 }
 
 
-pub fn metadata_all_handler(
-    req: HttpRequest<AppState>
+pub async fn metadata_all_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
     ) -> ActixResult<HttpResponse>
 {
     info!("Metadata for all");
-    let user_auth_level = get_user_auth_level(&req);
-    let mut schema_details = req.state().schema.read().unwrap().metadata(user_auth_level);
-    let ll_config = match &req.state().logic_layer_config {
+    let user_auth_level = get_user_auth_level(&req, &state);
+    let mut schema_details = state.schema.read().unwrap().metadata(user_auth_level);
+    let ll_config = match &state.logic_layer_config {
         Some(llc) => llc.read().unwrap().clone(),
         None => {
-            return  Ok(HttpResponse::Ok().json(schema_details))
+            return  Ok(HttpResponse::Ok().json(&schema_details))
         }
     };
     let mut cubes: Vec<CubeMetadata> = Vec::new();
@@ -72,24 +72,28 @@ pub fn metadata_all_handler(
         }
     }
     schema_details.cubes = cubes;
-    Ok(HttpResponse::Ok().json(schema_details))
+    Ok(HttpResponse::Ok().json(&schema_details))
 }
 
 
-pub fn members_default_handler(
-    (req, cube): (HttpRequest<AppState>, Path<String>)
-    ) -> FutureResponse<HttpResponse>
+pub async fn members_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube: web::Path<String>,
+    ) -> ActixResult<HttpResponse>
 {
     let cube_format = (cube.into_inner(), "csv".to_owned());
-    do_members(req, cube_format)
+    do_members(req, state, cube_format).await
 }
 
 
-pub fn members_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String, String)>)
-    ) -> FutureResponse<HttpResponse>
+pub async fn members_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<(String, String)>,
+    ) -> ActixResult<HttpResponse>
 {
-    do_members(req, cube_format.into_inner())
+    do_members(req, state, cube_format.into_inner()).await
 }
 
 
@@ -149,20 +153,19 @@ pub fn get_cube_metadata(
 }
 
 
-pub fn do_members(
-    req: HttpRequest<AppState>,
+pub async fn do_members(
+    req: HttpRequest,
+    state: web::Data<AppState>,
     cube_format: (String, String),
-    ) -> FutureResponse<HttpResponse>
+    ) -> ActixResult<HttpResponse>
 {
     let (cube, format) = cube_format;
 
     // Get cube object to check for API key
-    let schema = &req.state().schema.read().unwrap().clone();
+    let schema = &state.schema.read().unwrap().clone();
     let cube_obj = ok_or_404!(schema.get_cube_by_name(&cube));
 
-    if let Err(err) = verify_authorization(&req, cube_obj.min_auth_level) {
-        return boxed_error_http_response(err);
-    }
+    verify_authorization(&req, &state, cube_obj.min_auth_level)?;
 
     let format = ok_or_404!(format.parse::<FormatType>());
 
@@ -179,22 +182,17 @@ pub fn do_members(
 
     info!("Members for cube: {}, level: {}", cube, level);
 
-    let members_sql_and_headers = req.state().schema.read().unwrap()
+    let members_sql_and_headers = state.schema.read().unwrap()
         .members_sql(&cube, &level);
 
     let (members_sql, header) = ok_or_400!(members_sql_and_headers);
 
-    req.state()
-        .backend
-        .exec_sql(members_sql)
-        .from_err()
-        .and_then(move |df| {
-            match format_records(&header, df, format, None, false) {
-                Ok(res) => Ok(HttpResponse::Ok().body(res)),
-                Err(err) => Ok(HttpResponse::NotFound().json(err.to_string())),
-            }
-        })
-        .responder()
+    let df = ok_or_500!(state.backend.exec_sql(members_sql).await);
+
+    match format_records(&header, df, format, None, false) {
+        Ok(res) => Ok(HttpResponse::Ok().body(res)),
+        Err(err) => Ok(HttpResponse::NotFound().json(err.to_string())),
+    }
 }
 
 

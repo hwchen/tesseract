@@ -1,6 +1,6 @@
 //! Convert clickhouse Block to tesseract_core::DataFrame
 
-use failure::{Error, bail};
+use anyhow::{Error, bail};
 
 use clickhouse_rs::types::{Block, ColumnType, Complex, Simple, SqlType};
 use tesseract_core::{DataFrame, Column, ColumnData};

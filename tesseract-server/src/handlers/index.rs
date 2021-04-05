@@ -6,13 +6,11 @@ use actix_web::{
 use serde_derive::Serialize;
 use structopt::clap::crate_version;
 
-use crate::app::AppState;
-
 
 /// Returns server status and Tesseract version.
-pub fn index_handler(_req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
+pub async fn index_handler(_req: HttpRequest) -> ActixResult<HttpResponse> {
     Ok(HttpResponse::Ok().json(
-        Status {
+        &Status {
             status: "ok".to_owned(),
             // TODO set this as the Cargo.toml version, after structopt added
             tesseract_version: crate_version!().to_owned(),

@@ -1,14 +1,13 @@
 //! Convert clickhouse Block to tesseract_core::DataFrame
 
-use failure::{Error, format_err};
-use futures::future::{self, Future};
-use mysql_async::{QueryResult, BinaryProtocol, Conn};
+use anyhow::{Error, format_err};
+use mysql_async::{Row, TextProtocol, QueryResult};
 use mysql_async::consts::ColumnType::*;
 use mysql_async::Value::*;
 use std::str;
 use tesseract_core::{DataFrame, Column, ColumnData};
 
-pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future<Item=DataFrame, Error=Error>> {
+pub async fn rows_to_df<'a>(mut query_result: QueryResult<'a, 'static, TextProtocol>) -> Result<DataFrame, Error> {
     let mut tcolumn_list = vec![];
     let columns = query_result.columns_ref();
 
@@ -62,15 +61,13 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     ColumnData::Float64(vec![]),
                 ))
             },
-            t => return Box::new(future::err(format_err!("Mysql type not yet supported: {:?}", t))),
+            t => return Err(format_err!("Mysql type not yet supported: {:?}", t)),
         }
     }
 
     let df = DataFrame::from_vec(tcolumn_list);
 
-    let future = query_result.reduce(df, |mut df_accum, r| {
-        let row = r.unwrap();
-
+    let res = query_result.reduce(df, |mut df_accum, row: Row| {
         for col_idx in 0..df_accum.columns.len() {
             let column_data = df_accum.columns
                 .get_mut(col_idx)
@@ -81,7 +78,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
                         Int(y) => {
-                            let raw_val: i8 = *y as i8;
+                            let raw_val: i8 = y as i8;
                             Some(col_data.push(raw_val))
                         },
                         _s => None
@@ -91,7 +88,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
                         Int(y) => {
-                            let raw_val: i16 = *y as i16;
+                            let raw_val: i16 = y as i16;
                             Some(col_data.push(raw_val))
                         },
                         _s => None
@@ -101,7 +98,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
                         Int(y) => {
-                            let raw_val: i32 = *y as i32;
+                            let raw_val: i32 = y as i32;
                             Some(col_data.push(raw_val))
                         },
                         _s => None
@@ -110,7 +107,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                 ColumnData::Int64(col_data) => {
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
-                        Int(y) => Some(col_data.push(*y)),
+                        Int(y) => Some(col_data.push(y)),
                         _s => None
                     };
                 },
@@ -118,7 +115,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
                         Float(y) => {
-                            let raw_val: f32 = *y as f32;
+                            let raw_val: f32 = y as f32;
                             Some(col_data.push(raw_val))
                         },
                         _s => None
@@ -127,9 +124,9 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                 ColumnData::Float64(col_data) => {
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
-                        Float(y) => Some(col_data.push(*y)),
+                        Double(y) => Some(col_data.push(y)),
                         Bytes(y) => {
-                            let tmp_val = str::from_utf8(y).unwrap().parse().unwrap();
+                            let tmp_val = str::from_utf8(&y).unwrap().parse().unwrap();
                             Some(col_data.push(tmp_val))
                         },
                         _s => None
@@ -139,7 +136,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
                     let raw_value = row.get(col_idx).unwrap();
                     match raw_value {
                         Bytes(y) => {
-                            let tmp_str = str::from_utf8(y).unwrap();
+                            let tmp_str = str::from_utf8(&y).unwrap();
                             // TODO is there a more memory efficient way to handle this
                             // other than copying the strings into the dataframe
                             Some(col_data.push(tmp_str.to_string()))
@@ -154,9 +151,7 @@ pub fn rows_to_df(query_result: QueryResult<Conn, BinaryProtocol>) -> Box<Future
         }
 
         df_accum
-    })
-    .map(|(_, df)| df)
-    .map_err(|err| format_err!("mysql err {}", err));
+    }).await?;
 
-    Box::new(future)
+    Ok(res)
 }

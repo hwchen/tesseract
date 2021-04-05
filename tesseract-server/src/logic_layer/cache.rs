@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use actix::SystemRunner;
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 use log::{info, debug};
 use std::time::Instant;
 
@@ -10,7 +9,7 @@ use tesseract_core::{Schema, Backend};
 use tesseract_core::names::{LevelName, Property};
 use tesseract_core::schema::{Level, Cube, InlineTable};
 
-use crate::logic_layer::{LogicLayerConfig};
+use crate::logic_layer::LogicLayerConfig;
 
 
 #[derive(Debug, Clone)]
@@ -276,11 +275,10 @@ pub struct DimensionCache {
 
 
 /// Populates a `Cache` object that will be shared through `AppState`.
-pub fn populate_cache(
+pub async fn populate_cache(
         schema: Schema,
-        ll_config: &Option<LogicLayerConfig>,
+        ll_config: Option<&LogicLayerConfig>,
         backend: Box<dyn Backend + Sync + Send>,
-        sys: &mut SystemRunner
 ) -> Result<Cache, Error> {
     info!("Populating cache...");
     let time_start = Instant::now();
@@ -324,8 +322,8 @@ pub fn populate_cache(
                 for level in &hierarchy.levels {
                     if time_column_names.contains(&level.name) {
                         let val = get_distinct_values(
-                            &level.key_column, &table, backend.clone(), sys
-                        )?;
+                            level.key_column.clone(), table.clone(), backend.clone()
+                        ).await?;
 
                         if level.name == "Year" {
                             year_level = Some(level.clone());
@@ -356,8 +354,8 @@ pub fn populate_cache(
                                 for annotation in annotations {
                                     if annotation.name == "level" && time_column_names.contains(&annotation.text) {
                                         let val = get_distinct_values(
-                                            &level.key_column, &table, backend.clone(), sys
-                                        )?;
+                                            level.key_column.clone(), table.clone(), backend.clone()
+                                        ).await?;
 
                                         if annotation.text == "Year" {
                                             year_level = Some(level.clone());
@@ -394,8 +392,8 @@ pub fn populate_cache(
                         if !found_time {
                             // Want to get distinct time values from the fact table
                             let val = get_distinct_values(
-                                &level.key_column, &cube.table.name, backend.clone(), sys
-                            )?;
+                                level.key_column.clone(), cube.table.name.clone(), backend.clone()
+                            ).await?;
 
                             time_level = Some(level.clone());
                             time_values = Some(val);
@@ -459,25 +457,25 @@ pub fn populate_cache(
 
                         if parent_levels.len() >= 1 {
                             parent_map = Some(get_parent_data(
-                                &parent_levels[parent_levels.len() - 1], &level,
-                                table, backend.clone(), sys
-                            )?);
+                                parent_levels[parent_levels.len() - 1].clone(), level.clone(),
+                                table, backend.clone()
+                            ).await?);
                         }
 
                         match child_level {
                             Some(child_level) => {
                                 children_map = Some(get_children_data(
-                                    &level, &child_level,
-                                    table, backend.clone(), sys
-                                )?);
+                                    level.clone(), child_level.clone(),
+                                    table, backend.clone()
+                                ).await?);
                             },
                             None => ()
                         }
 
                         // Get all IDs for this level
                         distinct_ids = get_distinct_values(
-                            &level.key_column, &table, backend.clone(), sys
-                        )?;
+                            level.key_column.clone(), table.clone(), backend.clone()
+                        ).await?;
                     }
 
                     let neighbors_map = get_neighbors_map(&distinct_ids);
@@ -539,7 +537,7 @@ pub fn populate_cache(
 }
 
 
-pub fn get_unique_level_name(cube: &Cube, ll_config: &Option<LogicLayerConfig>, level_name: &LevelName) -> Result<Option<String>, Error> {
+pub fn get_unique_level_name(cube: &Cube, ll_config: Option<&LogicLayerConfig>, level_name: &LevelName) -> Result<Option<String>, Error> {
     for dimension in &cube.dimensions {
         for hierarchy in &dimension.hierarchies {
             for level in &hierarchy.levels {
@@ -580,7 +578,7 @@ pub fn get_unique_level_name(cube: &Cube, ll_config: &Option<LogicLayerConfig>, 
 }
 
 
-pub fn get_level_map(cube: &Cube, ll_config: &Option<LogicLayerConfig>) -> Result<HashMap<String, LevelName>, Error> {
+pub fn get_level_map(cube: &Cube, ll_config: Option<&LogicLayerConfig>) -> Result<HashMap<String, LevelName>, Error> {
     let mut level_name_map = HashMap::new();
 
     for dimension in &cube.dimensions {
@@ -624,7 +622,7 @@ pub fn get_level_map(cube: &Cube, ll_config: &Option<LogicLayerConfig>) -> Resul
 }
 
 
-pub fn get_property_map(cube: &Cube, ll_config: &Option<LogicLayerConfig>) -> Result<HashMap<String, Property>, Error> {
+pub fn get_property_map(cube: &Cube, ll_config: Option<&LogicLayerConfig>) -> Result<HashMap<String, Property>, Error> {
     let mut property_map = HashMap::new();
 
     for dimension in &cube.dimensions {
@@ -745,29 +743,26 @@ pub fn get_inline_children_data(
 }
 
 
-pub fn get_parent_data(
-        parent_level: &Level,
-        current_level: &Level,
+// Level moved because of some bug in async fn
+// https://github.com/rust-lang/rust/issues/63033
+async fn get_parent_data(
+        parent_level: Level,
+        current_level: Level,
         table: &str,
         backend: Box<dyn Backend + Sync + Send>,
-        sys: &mut SystemRunner
 ) -> Result<HashMap<String, String>, Error> {
     let mut parent_data: HashMap<String, String> = HashMap::new();
 
-    let future = backend
+    let df = backend
         .exec_sql(
             format!(
                 "select distinct {0}, {1} from {2} group by {0}, {1} order by {0}, {1}",
                 parent_level.key_column, current_level.key_column, table,
             ).to_string()
-        );
-
-    let df = match sys.block_on(future) {
-        Ok(df) => df,
-        Err(err) => {
-            return Err(format_err!("Error populating cache with backend data: {}", err));
-        }
-    };
+        ).await
+        .map_err(|err| {
+            format_err!("Error populating cache with backend data: {}", err)
+        })?;
 
     let parent_column = df.columns[0].stringify_column_data();
     let current_column = df.columns[1].stringify_column_data();
@@ -780,29 +775,26 @@ pub fn get_parent_data(
 }
 
 
-pub fn get_children_data(
-        current_level: &Level,
-        child_level: &Level,
+// Level moved because of some bug in async fn
+// https://github.com/rust-lang/rust/issues/63033
+async fn get_children_data(
+        current_level: Level,
+        child_level: Level,
         table: &str,
         backend: Box<dyn Backend + Sync + Send>,
-        sys: &mut SystemRunner
 ) -> Result<HashMap<String, Vec<String>>, Error> {
     let mut children_data: HashMap<String, Vec<String>> = HashMap::new();
 
-    let future = backend
+    let df = backend
         .exec_sql(
             format!(
                 "select distinct {0}, {1} from {2} group by {0}, {1} order by {0}, {1}",
                 current_level.key_column, child_level.key_column, table,
             ).to_string()
-        );
-
-    let df = match sys.block_on(future) {
-        Ok(df) => df,
-        Err(err) => {
-            return Err(format_err!("Error populating cache with backend data: {}", err));
-        }
-    };
+        ).await
+        .map_err(|err| {
+            format_err!("Error populating cache with backend data: {}", err)
+        })?;
 
     let current_column = df.columns[0].stringify_column_data();
     let children_column = df.columns[1].stringify_column_data();
@@ -831,24 +823,21 @@ pub fn get_children_data(
 }
 
 
+// String moved because of some bug in async fn
+// https://github.com/rust-lang/rust/issues/63033
 /// Queries the database to get all the distinct values for a given level.
-pub fn get_distinct_values(
-        column: &str,
-        table: &str,
+async fn get_distinct_values(
+        column: String,
+        table: String,
         backend: Box<dyn Backend + Sync + Send>,
-        sys: &mut SystemRunner
 ) -> Result<Vec<String>, Error> {
-    let future = backend
+    let mut df = backend
         .exec_sql(
             format!("select distinct {} from {}", column, table).to_string()
-        );
-
-    let mut df = match sys.block_on(future) {
-        Ok(df) => df,
-        Err(err) => {
-            return Err(format_err!("Error populating cache with backend data: {}", err));
-        }
-    };
+        ).await
+        .map_err(|err| {
+            format_err!("Error populating cache with backend data: {}", err)
+        })?;
 
     if df.columns.len() >= 1 {
         df.columns[0].sort_column_data()?;

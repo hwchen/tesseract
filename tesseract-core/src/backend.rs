@@ -1,22 +1,23 @@
-use failure::Error;
-use futures::{Future, Stream};
+use anyhow::Error;
+use async_trait::async_trait;
 
 use crate::dataframe::DataFrame;
 use crate::query_ir::QueryIr;
 use crate::sql;
 
 
+#[async_trait]
 pub trait Backend {
     /// Takes in a SQL string, outputs a DataFrame, which will go on to be formatted into the
     /// desired query output format.
-    fn exec_sql(&self, sql: String) -> Box<dyn Future<Item=DataFrame, Error=Error>>;
+    async fn exec_sql(&self, sql: String) -> Result<DataFrame, Error>;
 
-    /// Takes in a SQL string, outputs a stream of
-    /// DataFrames, which will go on to be formatted into the
-    /// desired query output format.
-    fn exec_sql_stream(&self, sql: String) -> Box<dyn Stream<Item=Result<DataFrame, Error>, Error=Error>> {
-        unimplemented!()
-    }
+    ///// Takes in a SQL string, outputs a stream of
+    ///// DataFrames, which will go on to be formatted into the
+    ///// desired query output format.
+    //fn exec_sql_stream(&self, sql: String) -> Box<dyn Stream<Item=Result<DataFrame, Error>>> {
+    //    unimplemented!()
+    //}
 
     fn box_clone(&self) -> Box<dyn Backend + Send + Sync>;
 

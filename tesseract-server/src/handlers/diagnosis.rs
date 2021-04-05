@@ -1,46 +1,44 @@
-use std::collections::HashMap;
 use std::str;
 
 use actix_web::{
+    web,
     HttpRequest,
     HttpResponse,
-    Path,
     Result as ActixResult,
 };
-use failure::{Error, format_err};
-use futures::future::Future;
+use anyhow::Error;
 use lazy_static::lazy_static;
 use log::*;
 use serde_qs as qs;
 use serde_derive::Deserialize;
-use url::Url;
 
-use tesseract_core::names::{Property, LevelName};
 use tesseract_core::format::{format_records, FormatType};
 use tesseract_core::{DataFrame, Column, ColumnData};
-use tesseract_core::schema::{Cube, DimensionType, Level};
+use tesseract_core::schema::{Cube, Level};
 use crate::app::AppState;
-use crate::logic_layer::{LogicLayerConfig, CubeCache};
 use crate::handlers::util::{verify_authorization, format_to_content_type};
-use crate::handlers::logic_layer::{query_geoservice, GeoserviceQuery};
 
 
 /// Handles default aggregation when a format is not specified.
 /// Default format is jsonrecords.
-pub fn diagnosis_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>)
+pub async fn diagnosis_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    _cube: web::Path<()>,
 ) -> ActixResult<HttpResponse>
 {
-    perform_diagnosis(req, "jsonrecords".to_owned())
+    perform_diagnosis(req, state, "jsonrecords".to_owned()).await
 }
 
 
 /// Handles aggregation when a format is specified.
-pub fn diagnosis_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+pub async fn diagnosis_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>,
 ) -> ActixResult<HttpResponse>
 {
-    perform_diagnosis(req, cube_format.to_owned())
+    perform_diagnosis(req, state, cube_format.to_owned()).await
 }
 
 
@@ -50,8 +48,9 @@ pub struct DiagnosisQueryOpt {
 }
 
 
-pub fn perform_diagnosis(
-    req: HttpRequest<AppState>,
+pub async fn perform_diagnosis(
+    req: HttpRequest,
+    state: web::Data<AppState>,
     format: String,
 ) -> ActixResult<HttpResponse>
 {
@@ -64,8 +63,8 @@ pub fn perform_diagnosis(
     info!("Format: {:?}", format);
 
     let query = req.query_string();
-    let schema = req.state().schema.read().unwrap();
-    let _debug = req.state().debug;
+    let schema = state.schema.read().unwrap();
+    let _debug = state.debug;
 
     lazy_static! {
         static ref QS_NON_STRICT: qs::Config = qs::Config::new(5, false);
@@ -82,11 +81,11 @@ pub fn perform_diagnosis(
         Some(cube_name) => {
             match schema.get_cube_by_name(&cube_name) {
                 Ok(cube) => {
-                    if let Err(err) = verify_authorization(&req, cube.min_auth_level) {
+                    if let Err(err) = verify_authorization(&req, &state, cube.min_auth_level) {
                         return Ok(err);
                     }
 
-                    let (error_types, error_messages) = diagnose_cube(&req, cube);
+                    let (error_types, error_messages) = diagnose_cube(&req, &state, cube).await;
 
                     format_diagnosis_response(error_types, error_messages, format, None)
                 },
@@ -99,11 +98,11 @@ pub fn perform_diagnosis(
             let mut error_messages: Vec<String> = vec![];
 
             for cube in &schema.cubes {
-                if let Err(err) = verify_authorization(&req, cube.min_auth_level) {
+                if let Err(err) = verify_authorization(&req, &state, cube.min_auth_level) {
                     continue;
                 }
 
-                let (new_error_types, new_error_messages) = diagnose_cube(&req, &cube);
+                let (new_error_types, new_error_messages) = diagnose_cube(&req, &state, &cube).await;
 
                 // Add these to the overall list
                 if new_error_types.len() != 0 {
@@ -125,7 +124,7 @@ pub fn perform_diagnosis(
 }
 
 
-fn diagnose_cube(req: &HttpRequest<AppState>, cube: &Cube) -> (Vec<String>, Vec<String>) {
+async fn diagnose_cube(req: &HttpRequest, state: &web::Data<AppState>, cube: &Cube) -> (Vec<String>, Vec<String>) {
     let mut error_types: Vec<String> = vec![];
     let mut error_messages: Vec<String> = vec![];
 
@@ -146,7 +145,7 @@ fn diagnose_cube(req: &HttpRequest<AppState>, cube: &Cube) -> (Vec<String>, Vec<
                         dimension_table.name,
                     );
 
-                    match get_res_df(&req, sql_str) {
+                    match get_res_df(&req, &state, sql_str).await {
                         Ok(res_df) => {
                             match res_df.columns.get(0) {
                                 Some(column) => {
@@ -184,7 +183,7 @@ fn diagnose_cube(req: &HttpRequest<AppState>, cube: &Cube) -> (Vec<String>, Vec<
                         last_level.key_column,
                     );
 
-                    match get_res_df(&req, sql_str) {
+                    match get_res_df(&req, &state, sql_str).await {
                         Ok(res_df) => {
                             match res_df.columns.get(0) {
                                 Some(column) => {
@@ -266,7 +265,7 @@ fn format_diagnosis_response(
         match format_records(&headers, df, format, None, true) {
             Ok(res) => {
                 Ok(HttpResponse::ExpectationFailed()
-                    .set(content_type)
+                    .content_type(content_type)
                     .body(res))
             },
             Err(err) => Ok(HttpResponse::NotFound().json(err.to_string())),
@@ -275,11 +274,6 @@ fn format_diagnosis_response(
 }
 
 
-fn get_res_df(req: &HttpRequest<AppState>, sql_str: String) -> Result<DataFrame, Error> {
-    req.state().backend
-        .exec_sql(sql_str)
-        .wait()
-        .and_then(move |df| {
-            Ok(df)
-        })
+async fn get_res_df(req: &HttpRequest, state: &web::Data<AppState>, sql_str: String) -> Result<DataFrame, Error> {
+    state.backend.exec_sql(sql_str).await
 }

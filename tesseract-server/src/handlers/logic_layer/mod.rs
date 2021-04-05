@@ -13,19 +13,21 @@ pub use self::metadata::logic_layer_members_default_handler;
 pub use self::relations::logic_layer_relations_handler;
 pub use self::relations::logic_layer_relations_default_handler;
 
-use actix_web::{HttpRequest, HttpResponse, Path, ResponseError};
+use actix_web::{web, HttpRequest, HttpResponse, ResponseError};
 use crate::app::AppState;
 use crate::errors::ServerError;
 use tesseract_core::CubeHasUniqueLevelsAndProperties;
 
 
-pub fn logic_layer_non_unique_levels_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>),
+pub async fn logic_layer_non_unique_levels_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<()>,
     ) -> HttpResponse
 {
-    if req.state().debug {
+    if state.debug {
         // must be true, but have to de-structure again after doing it before in app.rs;
-        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &req.state().has_unique_levels_properties {
+        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &state.has_unique_levels_properties {
             ServerError::LogicLayerDuplicateNames { cube: cube.clone(), name: name.clone() }.error_response()
         } else {
             unreachable!();
@@ -36,13 +38,15 @@ pub fn logic_layer_non_unique_levels_default_handler(
 }
 
 
-pub fn logic_layer_non_unique_levels_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<(String)>),
+pub async fn logic_layer_non_unique_levels_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>,
     ) -> HttpResponse
 {
-    if req.state().debug {
+    if state.debug {
         // must be true, but have to de-structure again after doing it before in app.rs;
-        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &req.state().has_unique_levels_properties {
+        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &state.has_unique_levels_properties {
             ServerError::LogicLayerDuplicateNames { cube: cube.clone(), name: name.clone() }.error_response()
         } else {
             unreachable!();
@@ -53,13 +57,15 @@ pub fn logic_layer_non_unique_levels_handler(
 }
 
 
-pub fn logic_layer_relations_non_unique_levels_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>),
+pub async fn logic_layer_relations_non_unique_levels_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<()>,
     ) -> HttpResponse
 {
-    if req.state().debug {
+    if state.debug {
         // must be true, but have to de-structure again after doing it before in app.rs;
-        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &req.state().has_unique_levels_properties {
+        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &state.has_unique_levels_properties {
             ServerError::LogicLayerDuplicateNames { cube: cube.clone(), name: name.clone() }.error_response()
         } else {
             unreachable!();
@@ -70,13 +76,15 @@ pub fn logic_layer_relations_non_unique_levels_default_handler(
 }
 
 
-pub fn logic_layer_relations_non_unique_levels_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<(String)>),
+pub async fn logic_layer_relations_non_unique_levels_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>,
     ) -> HttpResponse
 {
-    if req.state().debug {
+    if state.debug {
         // must be true, but have to de-structure again after doing it before in app.rs;
-        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &req.state().has_unique_levels_properties {
+        if let CubeHasUniqueLevelsAndProperties::False { cube, name } = &state.has_unique_levels_properties {
             ServerError::LogicLayerDuplicateNames { cube: cube.clone(), name: name.clone() }.error_response()
         } else {
             unreachable!();

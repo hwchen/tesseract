@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::str;
 
-use actix_web::{AsyncResponder, FutureResponse, HttpRequest, HttpResponse, Path, Request};
+use actix_web::{web, HttpRequest, HttpResponse};
 use failure::{Error, format_err, bail};
 use futures::future;
 use futures::future::*;
 use lazy_static::lazy_static;
 use log::*;
-use r2d2_redis::{redis};
 use serde_qs as qs;
 use serde_derive::Deserialize;
 use url::Url;
@@ -51,20 +50,24 @@ macro_rules! some_or_break {
 
 /// Handles default aggregation when a format is not specified.
 /// Default format is CSV.
-pub fn logic_layer_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>)
-) -> FutureResponse<HttpResponse>
+pub async fn logic_layer_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    _cube: web::Path<()>,
+) -> HttpResponse
 {
-    logic_layer_aggregation(req, "jsonrecords".to_owned())
+    logic_layer_aggregation(req, "jsonrecords".to_owned()).await
 }
 
 
 /// Handles aggregation when a format is specified.
-pub fn logic_layer_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
-) -> FutureResponse<HttpResponse>
+pub async fn logic_layer_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>,
+) -> HttpResponse
 {
-    logic_layer_aggregation(req, cube_format.to_owned())
+    logic_layer_aggregation(req, cube_format.to_owned()).await
 }
 
 
@@ -190,20 +193,21 @@ macro_rules! consolidate_null_column_data {
 
 
 /// Performs data aggregation.
-pub fn logic_layer_aggregation(
-    req: HttpRequest<AppState>,
+pub async fn logic_layer_aggregation(
+    req: HttpRequest,
+    state: web::Data<AppState>,
     format: String,
-) -> FutureResponse<HttpResponse>
+) -> HttpResponse
 {
     let format = ok_or_404!(format.parse::<FormatType>());
 
     info!("Format: {:?}", format);
 
     let query = req.query_string();
-    let schema = req.state().schema.read().unwrap();
-    let debug = req.state().debug;
+    let schema = state.schema.read().unwrap();
+    let debug = state.debug;
 
-    let logic_layer_config: Option<LogicLayerConfig> = match &req.state().logic_layer_config {
+    let logic_layer_config: Option<LogicLayerConfig> = match &state.logic_layer_config {
         Some(llc) => Some(llc.read().unwrap().clone()),
         None => None
     };
@@ -234,14 +238,14 @@ pub fn logic_layer_aggregation(
     }
 
     // Check if this query is already cached
-    let redis_pool = req.state().redis_pool.clone();
+    let redis_pool = state.redis_pool.clone();
     let redis_cache_key = get_redis_cache_key("logic-layer", &req, &cube_name, &format);
 
     if let Some(res) = check_redis_cache(&format, &redis_pool, &redis_cache_key) {
         return res;
     }
 
-    let cache = req.state().cache.read().unwrap();
+    let cache = state.cache.read().unwrap();
 
     let cube_cache = match cache.find_cube_info(&cube_name) {
         Some(cube_cache) => cube_cache,
@@ -256,7 +260,7 @@ pub fn logic_layer_aggregation(
     // Turn AggregateQueryOpt into TsQuery
     let ts_queries = generate_ts_queries(
         agg_query.clone(), &cube, &cube_cache,
-        &logic_layer_config, &req.state().env_vars.geoservice_url
+        &logic_layer_config, &state.env_vars.geoservice_url
     );
     let (ts_queries, header_map) = ok_or_404!(ts_queries);
 
@@ -289,7 +293,7 @@ pub fn logic_layer_aggregation(
 
         debug!("Query IR: {:?}", query_ir);
 
-        let sql = req.state()
+        let sql = state
             .backend
             .generate_sql(query_ir);
 
@@ -321,7 +325,7 @@ pub fn logic_layer_aggregation(
     let futs: JoinAll<Vec<Box<dyn Future<Item=DataFrame, Error=Error>>>> = join_all(sql_strings
             .iter()
             .map(|sql| {
-                req.state()
+                state
                     .backend
                     .exec_sql(sql.clone())
             })

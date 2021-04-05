@@ -1,22 +1,13 @@
-use failure::{Error, format_err};
+use anyhow::Error;
+use async_trait::async_trait;
 use tesseract_core::{Backend, DataFrame};
-use futures::{Future, Stream};
 use tokio_postgres::NoTls;
-extern crate futures;
-extern crate tokio_postgres;
-extern crate bb8;
-extern crate bb8_postgres;
-extern crate futures_state_stream;
-extern crate tokio;
 
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
-use futures::{
-    future::{err, lazy, Either},
-};
 
 mod df;
-use self::df::{rows_to_df};
+use self::df::rows_to_df;
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -26,14 +17,14 @@ pub struct Postgres {
 
 impl Postgres {
     pub fn new(address: &str) -> Postgres {
-        let pg_mgr: PostgresConnectionManager<NoTls> = PostgresConnectionManager::new(address, tokio_postgres::NoTls);
-        let future = lazy(|| {
-            Pool::builder()
-                .build(pg_mgr)
-        });
+        let pg_mgr: PostgresConnectionManager<NoTls> = PostgresConnectionManager::new(address.parse().unwrap(), tokio_postgres::NoTls);
+        let future = Pool::builder().build(pg_mgr);
+
         // synchronously setup pg pool
-        let mut runtime = tokio::runtime::Runtime::new().expect("Unable to create a runtime");
-        let pool = runtime.block_on(future).unwrap();
+        // TODO Pool should just be initialized outside and passed into this constructor, to avoid
+        // having to create another runtime. Or this fn can simply be async.
+        let rt = tokio::runtime::Builder::new_current_thread().build().expect("Unable to create a runtime");
+        let pool = rt.block_on(future).unwrap();
 
         Postgres {
             db_url: address.to_string(),
@@ -54,23 +45,14 @@ impl Postgres {
 // 1. better connection lifecycle management!
 // 2. dataframe creation
 
+#[async_trait]
 impl Backend for Postgres {
-    fn exec_sql(&self, sql: String) -> Box<Future<Item=DataFrame, Error=Error>> {
-        let fut = self.pool.run(move |mut connection| {
-            connection.prepare(&sql).then( |r| match r {
-                Ok(select) => {
-                    let f = connection.query(&select, &[])
-                        .collect()
-                        .then(move |r| {
-                            let df = rows_to_df(r.expect("Unable to retrieve rows"), select.columns());
-                            Ok((df, connection))
-                        });
-                    Either::A(f)
-                }
-                Err(e) => Either::B(err((e, connection))),
-            })
-        }).map_err(|err| format_err!("Postgres error {:?}", err));
-        Box::new(fut)
+    async fn exec_sql(&self, sql: String) -> Result<DataFrame, Error> {
+        let connection = self.pool.get().await?;
+        let statement = connection.prepare(&sql).await?;
+        let rows = connection.query(&statement, &[]).await?;
+        let df = rows_to_df(rows, statement.columns());
+        Ok(df)
     }
 
     fn box_clone(&self) -> Box<dyn Backend + Send + Sync> {
@@ -83,31 +65,22 @@ impl Backend for Postgres {
 mod tests {
     use super::*;
     use std::env;
-    use tokio::runtime::current_thread::Runtime;
-    use tesseract_core::{ColumnData};
+    use tesseract_core::ColumnData;
 
     // TODO move to integration tests
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_pg_query() {
+    async fn test_pg_query() {
         let postgres_db= env::var("TESSERACT_DATABASE_URL").expect("Please provide TESSERACT_DATABASE_URL");
         let pg = Postgres::new(&postgres_db);
-        let future = pg.exec_sql("SELECT 1337 as hello;".to_string()).map(|df| {
-            println!("Result was: {:?}", df);
-            let expected_len: usize = 1;
-            let val = match df.columns[0].column_data {
-                ColumnData::Int32(ref internal_data) => internal_data[0],
-                _ => -1
-            };
-            assert_eq!(df.len(), expected_len);
-            assert_eq!(val, 1337);
-            })
-            .map_err(|err| {
-               println!("Got error {:?}", err);
-                ()
-            });
-
-        let mut rt = Runtime::new().unwrap();
-        rt.block_on(future).unwrap();
+        let df = pg.exec_sql("SELECT 1337 as hello;".to_string()).await.unwrap();
+        println!("Result was: {:?}", df);
+        let expected_len: usize = 1;
+        let val = match df.columns[0].column_data {
+            ColumnData::Int32(ref internal_data) => internal_data[0],
+            _ => -1
+        };
+        assert_eq!(df.len(), expected_len);
+        assert_eq!(val, 1337);
     }
 }

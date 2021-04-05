@@ -1,4 +1,4 @@
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 
 use tesseract_core::Schema;
 

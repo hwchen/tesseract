@@ -1,11 +1,7 @@
 use std::str;
 
-use actix_web::{
-    client,
-    HttpMessage,
-};
+use actix_web::client::Client;
 use failure::{Error, format_err};
-use futures::future::Future;
 use serde_derive::Deserialize;
 use url::Url;
 
@@ -27,7 +23,7 @@ pub enum GeoserviceQuery {
 
 
 /// Queries geoservice for geo cuts resolution.
-pub fn query_geoservice(
+pub async fn query_geoservice(
     base_url: &Url,
     geoservice_query: &GeoserviceQuery,
     geo_id: &str
@@ -41,34 +37,15 @@ pub fn query_geoservice(
 
     let query_url = base_url.join(&join_str).unwrap();
 
-    let result: Result<Vec<GeoServiceResponseJson>, Result<(), Error>> = client::get(query_url.as_str())
-        .header("User-Agent", "Actix-web")
-        .finish()
-        .unwrap()
+    // TODO put client in AppData
+    let client = Client::default();
+    let resp: Result<Vec<GeoServiceResponseJson>, Result<(), Error>> = client.get(query_url.as_str())
+        .insert_header(("User-Agent", "Actix-web"))
         .send()
-        .map_err(|err| {
-            Err(format_err!("{}", err.to_string()))
-        })
-        .and_then(|response| {
-            response.body()
-                .and_then(|body| {
-                    let body = str::from_utf8(&body).unwrap();
-                    let data: Vec<GeoServiceResponseJson> = serde_json::from_str(body).unwrap();
-                    Ok(data)
-                })
-                .map_err(|err| {
-                    Err(format_err!("{}", err.to_string()))
-                })
-        })
-        .wait();
+        .await?;
 
-    match result {
-        Ok(data) => Ok(data),
-        Err(err) => {
-            match err {
-                Ok(_) => Err(format_err!("No data returned from geoservice")),
-                Err(err) => Err(format_err!("{}", err.to_string()))
-            }
-        }
-    }
+    let body = resp.body();
+    let data: Vec<GeoServiceResponseJson> = serde_json::from_str(body)?;
+
+    Ok(data)
 }

@@ -1,6 +1,6 @@
 use serde_derive::{Serialize, Deserialize};
 use std::convert::From;
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 
 pub mod aggregator;
 pub mod metadata;

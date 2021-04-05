@@ -1,12 +1,11 @@
-use failure::{Error, format_err};
-use futures::future::Future;
+use anyhow::Error;
+use async_trait::async_trait;
 use tesseract_core::{Backend, DataFrame};
 
-extern crate futures;
-extern crate mysql_async as my;
+use mysql_async as my;
 
 mod df;
-use self::df::{rows_to_df};
+use self::df::rows_to_df;
 
 use my::prelude::*;
 
@@ -25,19 +24,12 @@ impl MySql {
     }
 }
 
+#[async_trait]
 impl Backend for MySql {
-    fn exec_sql(&self, sql: String) -> Box<Future<Item=DataFrame, Error=Error>> {
-        let future = self.pool.get_conn()
-            .and_then(move |conn| {
-                conn.prep_exec(sql.to_string(), ())
-            })
-            .map_err(|e| {
-                format_err!("{}", e.description().to_string())
-            })
-            .and_then(|result| {
-                rows_to_df(result)
-            });
-        Box::new(future)
+    async fn exec_sql(&self, sql: String) -> Result<DataFrame, Error> {
+        let mut conn = self.pool.get_conn().await?;
+        let result = conn.query_iter(sql.to_string()).await?;
+        Ok(rows_to_df(result).await?)
     }
 
     fn box_clone(&self) -> Box<dyn Backend + Send + Sync> {
@@ -53,13 +45,13 @@ mod tests {
     use std::env;
 
     // TODO move to integration tests
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn test_simple_query() {
+    async fn test_simple_query() {
         let mysql_db = env::var("MYSQL_DATABASE_URL").unwrap();
         let sql = r"SELECT 1 as example_int, 'hello' as example_name, 0.5 as example_float;";
         let mysql = MySql::new(&mysql_db);
-        let r = mysql.exec_sql(sql.to_string()).wait().unwrap();
+        let r = mysql.exec_sql(sql.to_string()).await.unwrap();
         println!("{:?}", r);
     }
 }

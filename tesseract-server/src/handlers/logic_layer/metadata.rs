@@ -1,9 +1,7 @@
 use actix_web::{
-    AsyncResponder,
-    FutureResponse,
+    web,
     HttpRequest,
     HttpResponse,
-    Path,
 };
 use failure::Error;
 use futures::future::{self, Future};
@@ -13,7 +11,7 @@ use serde_derive::{Serialize, Deserialize};
 use serde_qs as qs;
 
 use crate::app::AppState;
-use crate::logic_layer::{LogicLayerConfig};
+use crate::logic_layer::LogicLayerConfig;
 
 use tesseract_core::format::{format_records, FormatType};
 use tesseract_core::names::LevelName;
@@ -26,38 +24,43 @@ use super::super::util::{
 
 /// Handles default members query when a format is not specified.
 /// Default format is CSV.
-pub fn logic_layer_members_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>)
-) -> FutureResponse<HttpResponse>
+pub async fn logic_layer_members_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    _cube: web::Path<()>
+) -> HttpResponse
 {
-    get_members(req, "jsonrecords".to_owned())
+    get_members(req, state, "jsonrecords".to_owned()).await
 }
 
 
 /// Handles members query when a format is specified.
-pub fn logic_layer_members_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
-) -> FutureResponse<HttpResponse>
+pub async fn logic_layer_members_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>
+) -> HttpResponse
 {
-    get_members(req, cube_format.to_owned())
+    get_members(req, state, cube_format.to_owned()).await
 }
 
 
 /// Performs members query.
-pub fn get_members(
-    req: HttpRequest<AppState>,
-    format: String,
-) -> FutureResponse<HttpResponse>
+pub async fn get_members(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    format: web::Path<String>
+) -> HttpResponse
 {
     let format = ok_or_404!(format.parse::<FormatType>());
 
     info!("Format: {:?}", format);
 
     let query = req.query_string();
-    let schema = req.state().schema.read().unwrap();
-    let _debug = req.state().debug;
+    let schema = state.schema.read().unwrap();
+    let _debug = state.debug;
 
-    let logic_layer_config: Option<LogicLayerConfig> = match &req.state().logic_layer_config {
+    let logic_layer_config: Option<LogicLayerConfig> = match &state.logic_layer_config {
         Some(llc) => Some(llc.read().unwrap().clone()),
         None => None
     };
@@ -164,7 +167,7 @@ pub fn get_members(
     debug!("{:?}", members_sql);
     debug!("{:?}", header);
 
-    req.state()
+    state
         .backend
         .exec_sql(members_sql)
         .from_err()

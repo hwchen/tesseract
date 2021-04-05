@@ -5,6 +5,7 @@ use log::*;
 use serde_qs as qs;
 
 use actix_web::{
+    web,
     HttpRequest,
     HttpResponse,
     Result as ActixResult,
@@ -19,7 +20,7 @@ pub struct FlushQueryOpt {
     pub secret: String,
 }
 
-pub fn flush_handler(req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
+pub async fn flush_handler(req: HttpRequest, state: web::Data<AppState>) -> ActixResult<HttpResponse> {
     let query = req.query_string();
 
     lazy_static!{
@@ -34,7 +35,7 @@ pub fn flush_handler(req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
         },
     };
 
-    let db_secret = match &req.state().env_vars.flush_secret {
+    let db_secret = match &state.env_vars.flush_secret {
         Some(db_secret) => db_secret,
         None => { return Ok(HttpResponse::Unauthorized().finish()); }
     };
@@ -44,7 +45,7 @@ pub fn flush_handler(req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
 
         // Read schema again
         // NOTE: This logic will change once we start supporting remote schemas
-        let schema_path = match &req.state().env_vars.schema_source {
+        let schema_path = match &state.env_vars.schema_source {
             SchemaSource::LocalSchema { ref filepath } => filepath,
             SchemaSource::RemoteSchema { ref endpoint } => endpoint,
         };
@@ -58,12 +59,12 @@ pub fn flush_handler(req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
         };
 
         // Update shared schema
-        let mut w = req.state().schema.write().unwrap();
+        let mut w = state.schema.write().unwrap();
         *w = schema.clone();
 
         // TODO: Uncomment when issue with SystemRunner is solved
 //        // Re-populate cache with the new schema
-//        let cache = match populate_cache(schema, req.state().backend.clone()) {
+//        let cache = match populate_cache(schema, state.backend.clone()) {
 //            Ok(cache) => cache,
 //            Err(err) => {
 //                error!("{}", err);
@@ -72,7 +73,7 @@ pub fn flush_handler(req: HttpRequest<AppState>) -> ActixResult<HttpResponse> {
 //        };
 //
 //        // Update shared cache
-//        let mut w = req.state().cache.write().unwrap();
+//        let mut w = state.cache.write().unwrap();
 //        *w = cache;
 
         Ok(HttpResponse::Ok().finish())

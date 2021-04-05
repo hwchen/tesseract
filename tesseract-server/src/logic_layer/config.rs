@@ -1,4 +1,4 @@
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 use std::collections::{HashMap, HashSet};
 
 use serde_derive::Deserialize;

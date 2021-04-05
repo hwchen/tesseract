@@ -20,7 +20,7 @@
 // - Dimension.Level
 // etc.
 
-use failure::{Error, bail, format_err, ensure};
+use anyhow::{Error, bail, format_err, ensure};
 use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;

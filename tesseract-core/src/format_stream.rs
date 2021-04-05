@@ -1,3 +1,5 @@
+/// Currently dead code, until module gets switched back on.
+
 use bytes::Bytes;
 use csv;
 use failure::{Error, format_err};

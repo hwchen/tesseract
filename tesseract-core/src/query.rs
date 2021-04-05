@@ -1,6 +1,6 @@
 use itertools::join;
 
-use failure::{Error, format_err, bail};
+use anyhow::{Error, format_err, bail};
 use std::str::FromStr;
 
 use crate::names::{

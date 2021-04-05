@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::str;
 
 use actix_web::{
+    web,
     HttpRequest,
     HttpResponse,
-    Path,
     Result as ActixResult,
 };
-use failure::{Error, format_err};
 use lazy_static::lazy_static;
 use log::*;
 use serde_qs as qs;
@@ -26,20 +25,24 @@ use crate::handlers::logic_layer::{query_geoservice, GeoserviceQuery};
 
 /// Handles default aggregation when a format is not specified.
 /// Default format is jsonrecords.
-pub fn logic_layer_relations_default_handler(
-    (req, _cube): (HttpRequest<AppState>, Path<()>)
+pub async fn logic_layer_relations_default_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube: web::Path<()>,
 ) -> ActixResult<HttpResponse>
 {
-    logic_layer_relations(req, "jsonrecords".to_owned())
+    logic_layer_relations(req, state, "jsonrecords".to_owned())
 }
 
 
 /// Handles aggregation when a format is specified.
-pub fn logic_layer_relations_handler(
-    (req, cube_format): (HttpRequest<AppState>, Path<(String)>)
+pub async fn logic_layer_relations_handler(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    cube_format: web::Path<String>,
 ) -> ActixResult<HttpResponse>
 {
-    logic_layer_relations(req, cube_format.to_owned())
+    logic_layer_relations(req, state, cube_format.to_owned())
 }
 
 
@@ -53,7 +56,8 @@ pub struct LogicLayerRelationQueryOpt {
 
 
 pub fn logic_layer_relations(
-    req: HttpRequest<AppState>,
+    req: HttpRequest,
+    state: web::Data<AppState>,
     format: String,
 ) -> ActixResult<HttpResponse>
 {
@@ -66,8 +70,8 @@ pub fn logic_layer_relations(
     info!("Format: {:?}", format);
 
     let query = req.query_string();
-    let schema = req.state().schema.read().unwrap();
-    let _debug = req.state().debug;
+    let schema = state.schema.read().unwrap();
+    let _debug = state.debug;
 
     lazy_static! {
         static ref QS_NON_STRICT: qs::Config = qs::Config::new(5, false);
@@ -78,7 +82,7 @@ pub fn logic_layer_relations(
         Err(err) => return Ok(HttpResponse::NotFound().json(err.to_string()))
     };
 
-    let logic_layer_config: Option<LogicLayerConfig> = match &req.state().logic_layer_config {
+    let logic_layer_config: Option<LogicLayerConfig> = match &state.logic_layer_config {
         Some(llc) => Some(llc.read().unwrap().clone()),
         None => None
     };
@@ -102,7 +106,7 @@ pub fn logic_layer_relations(
         return Ok(err);
     }
 
-    let cache = req.state().cache.read().unwrap();
+    let cache = state.cache.read().unwrap();
 
     let cube_cache = match cache.find_cube_info(&cube_name) {
         Some(cube_cache) => cube_cache,
@@ -113,7 +117,7 @@ pub fn logic_layer_relations(
 
     let level_map = &cube_cache.level_map;
     let property_map = &cube_cache.property_map;
-    let geoservice_url = &req.state().env_vars.geoservice_url;
+    let geoservice_url = &state.env_vars.geoservice_url;
 
     let dimensions_map: Vec<Vec<String>> = match get_relations(&cuts_map, &cube, &cube_cache, &level_map, &property_map, &geoservice_url) {
         Ok(dm) => dm,

@@ -1,9 +1,10 @@
-use jsonwebtoken::{decode, Validation};
+use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde_derive::{Serialize, Deserialize};
-use actix_web::{HttpRequest};
+use std::collections::HashMap;
+use actix_web::{web, HttpRequest};
+
 pub const X_TESSERACT_JWT_TOKEN: &str = "x-tesseract-jwt-token";
-use crate::app::AppState;
-use tesseract_core::{DEFAULT_ALLOWED_ACCESS};
+use tesseract_core::DEFAULT_ALLOWED_ACCESS;
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,8 +15,8 @@ struct Claims {
     auth_level: Option<i32>,
 }
 
-pub fn extract_token(req: &HttpRequest<AppState>) -> String {
-    let qry = req.query();
+pub fn extract_token(req: &HttpRequest) -> String {
+    let qry = web::Query::<HashMap<String, String>>::from_query(req.query_string()).expect("temporary unwrap");
 
     let token = {
         let qp_token = qry.get(X_TESSERACT_JWT_TOKEN);
@@ -48,8 +49,9 @@ pub fn extract_token(req: &HttpRequest<AppState>) -> String {
 pub fn user_auth_level(jwt_secret: &Option<String>, raw_token: &str) -> Option<i32> {
     match jwt_secret {
         Some(key) => {
+            let decoding_key = DecodingKey::from_base64_secret(&key).ok()?;
             let validation = Validation::default();
-            match decode::<Claims>(&raw_token, key.as_ref(), &validation) {
+            match decode::<Claims>(&raw_token, &decoding_key, &validation) {
                 Ok(c) => {
                     let claims: Claims = c.claims;
                     if claims.auth_level.is_some() && claims.status == "valid" {
@@ -72,8 +74,12 @@ pub fn validate_web_token(jwt_secret: &Option<String>, raw_token: &str, min_auth
     }
     match jwt_secret {
         Some(key) => {
+            let decoding_key = match DecodingKey::from_base64_secret(&key) {
+                Ok(dk) => dk,
+                Err(_) => return false,
+            };
             let validation = Validation::default();
-            match decode::<Claims>(&raw_token, key.as_ref(), &validation) {
+            match decode::<Claims>(&raw_token, &decoding_key, &validation) {
                 Ok(c) => {
                     let claims: Claims = c.claims;
                     let part1 = claims.status == "valid"; // TODO allow this value to be configurable

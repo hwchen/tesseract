@@ -2,13 +2,16 @@ mod backend;
 mod dataframe;
 mod sql;
 pub mod format;
-pub mod format_stream;
+
+// fix Stream later; it's kind of a pain for now.
+//pub mod format_stream;
+
 pub mod names;
 pub mod schema;
 pub mod query;
 pub mod query_ir;
 
-use failure::{Error, format_err, bail};
+use anyhow::{Error, format_err, bail};
 use log::*;
 use serde_xml_rs as serde_xml;
 use serde_xml::from_reader;
@@ -1257,6 +1260,7 @@ impl Schema {
         Ok(column)
     }
 
+    #[allow(dead_code)]
     fn get_mea_col(&self, cube_name: &str, measure: &Measure) -> Result<String, Error> {
         let cube = self.cubes.iter()
             .find(|cube| &cube.name == &cube_name)

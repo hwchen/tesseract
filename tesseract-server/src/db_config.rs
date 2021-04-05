@@ -13,7 +13,7 @@
 //! used to initialize actix-web, so there's a litle boilerplate
 //! to implement https://users.rust-lang.org/t/solved-is-it-possible-to-clone-a-boxed-trait-object/1714/4
 
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 use std::fmt;
 use std::str::FromStr;
 

@@ -1,5 +1,5 @@
 use csv;
-use failure::{Error, format_err};
+use anyhow::{Error, format_err};
 use indexmap::IndexMap;
 use serde::Serializer;
 use serde::ser::{SerializeSeq};
